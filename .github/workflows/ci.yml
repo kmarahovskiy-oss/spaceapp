@@ -23,6 +23,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: aaf3029667a39707e34b5e8b4e7343b01fcc1224
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -60,6 +61,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: aaf3029667a39707e34b5e8b4e7343b01fcc1224
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -96,3 +98,32 @@ jobs:
       - name: Pack launcher candidate
         working-directory: ${{ runner.temp }}/spaceapp-public-export
         run: npm run pack:dry-run -w run-spaceapp
+
+  full-regression-audit:
+    name: Full public regression on PR revision
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: aaf3029667a39707e34b5e8b4e7343b01fcc1224
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Install test prerequisites
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sqlite3 ripgrep
+      - name: Full public test suite
+        run: npm run test:public
+      - name: Build all production packages
+        if: ${{ !cancelled() }}
+        run: npm run build
+      - name: Pack launcher
+        if: ${{ !cancelled() }}
+        run: npm run pack:dry-run -w run-spaceapp
+
