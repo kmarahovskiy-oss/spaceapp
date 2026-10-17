@@ -172,7 +172,7 @@
         "failure": {
           "message": "synthetic transport failed",
           "source": "TypeScriptSDK",
-          "stackTrace": "Error: synthetic transport failed\n    at runRoomAgentBackgroundAction (/workspace/scratch/282790e070ac/spaceapp-bounty60/apps/worker/tests/temporal-sandbox.test.ts:116:71)",
+          "stackTrace": "",
           "applicationFailureInfo": {
             "type": "Error"
           }
@@ -419,7 +419,7 @@
           "cause": {
             "message": "synthetic transport failed",
             "source": "TypeScriptSDK",
-            "stackTrace": "Error: synthetic transport failed\n    at runRoomAgentBackgroundAction (/workspace/scratch/282790e070ac/spaceapp-bounty60/apps/worker/tests/temporal-sandbox.test.ts:116:71)",
+            "stackTrace": "",
             "applicationFailureInfo": {
               "type": "Error"
             }

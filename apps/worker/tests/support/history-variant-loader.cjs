@@ -1,4 +1,6 @@
-// Test-only historical/invalid bundles. Production sources are never rewritten.
+/** Produce guarded historical or deliberately incompatible bundles for tests only.
+ * Production files are never rewritten; missing injection points fail the build.
+ */
 module.exports = function (source) {
   const { variant } = this.getOptions();
   if (variant === 'legacy') {

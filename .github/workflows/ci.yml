@@ -41,6 +41,9 @@ jobs:
       - name: Build internal packages and typecheck
         run: npm run check
 
+      - name: Typecheck Temporal tests and their fixtures
+        run: npm run check:temporal-tests -w @space/worker
+
       # Independent of public export provenance, which cannot be regenerated
       # by a contributor. This runs every worker test, including replay and the
       # negative determinism control, with no skips or continue-on-error.

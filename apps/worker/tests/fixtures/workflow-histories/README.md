@@ -10,6 +10,7 @@ From the repository root, after installing dependencies and building contracts:
 
 ```sh
 npm run temporal:record-histories -w @space/worker
+npm run check:temporal-tests -w @space/worker
 npm test -w @space/worker
 ```
 
@@ -29,6 +30,12 @@ turn activity and at the beginning of the Dot goal workflow; both histories must
 Recording uses the same assertions as ordinary tests. The checked-in fixtures
 are read only in normal CI runs. They must never contain production histories,
 credentials, prompts or transcripts.
+
+The recorder clears failure `stackTrace` fields before writing JSON, so local
+workspace paths and source line numbers do not enter fixtures. This affects
+diagnostic metadata only: event order, command attributes and payloads are
+preserved. Removing these traces from existing fixtures is metadata cleanup,
+not re-recording; the same histories must still pass the replay gate.
 
 ## Coverage
 
@@ -54,7 +61,8 @@ and workflow identity. It also asserts the SDK's `DeterminismViolationError` for
 the intentionally incompatible test-only bundle. The recorder runs that same gate
 after recording, so newly introduced fixtures are replayed in the same command.
 
-The `Temporal sandbox and replay` CI job runs the entire worker suite independently
+The `Temporal sandbox and replay` CI job strictly type-checks the new tests and
+their imported fixtures, then runs the entire worker suite independently
 of the public-export provenance check. Its test step has a three-minute timeout;
 dependency installation and package builds are separate steps. No test failure
 is ignored. The GitHub ubuntu-latest duration must still be checked in CI: local

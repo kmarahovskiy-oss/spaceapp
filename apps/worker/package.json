@@ -10,6 +10,7 @@
     "start": "node dist/worker.js",
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
+    "check:temporal-tests": "tsc -p tsconfig.temporal-tests.json",
     "test": "vitest run",
     "temporal:record-histories": "SPACE_RECORD_HISTORIES=1 vitest run tests/temporal-sandbox.test.ts"
   },

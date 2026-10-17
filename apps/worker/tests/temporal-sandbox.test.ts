@@ -9,6 +9,7 @@ import { DeterminismViolationError } from '@temporalio/workflow';
 import { Context } from '@temporalio/activity';
 import { roomAgentSupervisorInputSchema } from '@space/contracts';
 import { defaultPayloadConverter } from '@temporalio/common';
+import { serializeHistory } from './support/history-json.js';
 
 const workflowsPath = fileURLToPath(new URL('./support/sandbox-workflows.ts', import.meta.url));
 const loader = fileURLToPath(new URL('./support/history-variant-loader.cjs', import.meta.url));
@@ -20,10 +21,14 @@ let legacy: WorkflowBundleWithSourceMap;
 let negative: WorkflowBundleWithSourceMap;
 let seq = 0;
 const completed = { status: 'COMPLETED', message: 'synthetic', roomAgentOutcome: { status: 'VERIFIED', executedActionCount: 1, statusReason: 'synthetic' } };
+/** Build a minimal synthetic turn accepted by the production input schema. */
 const turn = (n = 0) => ({ roomId: 'room:synthetic', paneId: 'pane:synthetic', prompt: 'Synthetic test', agentRunId: `agent_run:${n}`, traceId: `trace:synthetic-${n}` });
+/** Wrap a synthetic turn in a supervisor queue item. */
 const item = (n = 0) => ({ missionId: 'mission:synthetic', turn: turn(n) });
+/** Supply the synthetic room while allowing a scenario to set carried state. */
 const supervisor = (extra = {}) => ({ roomId: 'room:synthetic', ...extra });
 
+/** Bundle production workflows, optionally applying a guarded test-only variant. */
 async function bundle(variant?: string) {
   return bundleWorkflowCode({ workflowsPath, webpackConfigHook(config) {
     if (variant) config.module!.rules!.unshift({ test: /[/\\]src[/\\]workflows\.ts$/, enforce: 'pre', use: [{ loader, options: { variant } }] });
@@ -39,34 +44,44 @@ beforeAll(async () => {
 beforeEach(async () => { env = await TestWorkflowEnvironment.createTimeSkipping(); }, 60_000);
 afterEach(async () => { await env?.teardown(); }, 15_000);
 
+/** Run isolated workers, including memory child queues, until the scenario finishes. */
 async function run(activities: Record<string, (...args: any[]) => any>, fn: (queue: string) => Promise<void>, old = false) {
   const queue = `synthetic-${++seq}`;
   const queues = activities.refreshMemoryGraphSnapshot ? [queue, 'space-memory-maintenance', 'space-memory-mutations'] : [queue];
   const workers = await Promise.all(queues.map(taskQueue => Worker.create({
     connection: env.nativeConnection, taskQueue, workflowBundle: old ? legacy : current, activities, shutdownGraceTime: 0, shutdownForceTime: 3000,
   })));
+  /** Keep every worker polling while unwinding all workers after success or failure. */
   async function nest(index: number): Promise<void> {
     if (index === workers.length) return fn(queue);
     await workers[index]!.runUntil(() => nest(index + 1));
   }
   await nest(0);
 }
+/** Fetch the original execution, rather than silently following continue-as-new. */
 async function firstHistory(handle: any) {
   return env.client.workflow.getHandle(handle.workflowId, handle.firstExecutionRunId).fetchHistory();
 }
+/** Record scrubbed synthetic JSON only in explicit recorder mode; retain raw history in memory. */
 async function capture(handle: any, name: string) {
   const history = await firstHistory(handle);
-  if (record) { await mkdir(fixtureDir, { recursive: true }); await writeFile(join(fixtureDir, `${name}.json`), JSON.stringify(history.toJSON(), null, 2) + '\n'); }
+  if (record) {
+    await mkdir(fixtureDir, { recursive: true });
+    await writeFile(join(fixtureDir, `${name}.json`), serializeHistory(temporal.api.history.v1.History.create(history).toJSON()));
+  }
   return history;
 }
+/** Start a uniquely identified workflow with synthetic input on this scenario's queue. */
 async function start(queue: string, type: string, input: unknown) {
   return env.client.workflow.start(type, { workflowId: `synthetic-${type}-${++seq}`, taskQueue: queue, args: [input] });
 }
+/** Bound real-time waits for activities, which run outside the virtual workflow clock. */
 async function eventually(check: () => boolean) {
   // Bound real time: activity callbacks run outside the workflow's virtual clock.
   for (let n = 0; n < 1000; n++) { if (check()) return; await new Promise(r => setTimeout(r, 10)); }
   throw new Error('Synthetic activity milestone not reached');
 }
+/** Decode the actual server-recorded continue-as-new input for exact state assertions. */
 function continuedInput(history: any) {
   const event = history.events.find((e: any) => e.workflowExecutionContinuedAsNewEventAttributes);
   expect(event, 'continue-as-new event').toBeDefined();
@@ -160,10 +175,11 @@ it.each([false, true])('supervisor carries pending state after 50 items and resu
     await eventually(() => finished.length >= 1);
     // Wait for the continuation to become durable, then drive the next run too.
     await eventuallyAsync(async () => (await firstHistory(handle)).events?.some(e => e.workflowExecutionContinuedAsNewEventAttributes) ?? false);
-    const carried = continuedInput(await capture(handle, `roomAgentSupervisorWorkflow-${old ? 'legacy' : 'current'}`));
+    const carried = roomAgentSupervisorInputSchema.parse(continuedInput(await capture(handle, `roomAgentSupervisorWorkflow-${old ? 'legacy' : 'current'}`)));
     expect(carried.processedCount).toBe(0);
     expect(carried.pending).toHaveLength(1);
-    expect(carried.pending[0].turn.agentRunId).toBe('agent_run:2');
+    expect(carried.pending[0]!.turn.agentRunId).toBe('agent_run:2');
+    await eventually(() => executedIds.length === 2);
     expect(finished).toHaveLength(1);
     expect(executedIds).toEqual(['agent_run:1', 'agent_run:2']);
     expect(finished[0].status).toBe('COMPLETED');
@@ -171,6 +187,7 @@ it.each([false, true])('supervisor carries pending state after 50 items and resu
     await env.client.workflow.getHandle(handle.workflowId).terminate('synthetic test complete');
   }, old);
 }, 30_000);
+/** Wait for a durable history milestone without advancing an idle workflow's clock. */
 async function eventuallyAsync(check: () => Promise<boolean>) {
   for (let i = 0; i < 1000; i++) { if (await check()) return; await new Promise(r => setTimeout(r, 10)); }
   throw new Error('Workflow history milestone not reached');
@@ -186,7 +203,7 @@ it.each([false, true])('polls at one second and retains monitored missions after
     await expect(env.client.workflow.result(handle.workflowId, handle.firstExecutionRunId, { followRuns: false })).rejects.toThrow('continued as new');
     await eventuallyAsync(async () => (await firstHistory(handle)).events?.some(e => e.workflowExecutionContinuedAsNewEventAttributes) ?? false);
     const history = await capture(handle, `supervisor-polls-${old ? 'legacy' : 'current'}`);
-    const input = continuedInput(history);
+    const input = roomAgentSupervisorInputSchema.parse(continuedInput(history));
     expect(input.monitoringMissionIds).toEqual(['mission:synthetic']); expect(input.pending).toEqual([]);
     const timers = history.events!.filter(e => e.timerStartedEventAttributes);
     expect(timers).toHaveLength(250);
@@ -323,7 +340,7 @@ it('drains excess queue entries before continuing with at most 100 pending turns
     release();
     await eventuallyAsync(async () => (await firstHistory(handle)).events?.some(e => e.workflowExecutionContinuedAsNewEventAttributes) ?? false);
     const history = await capture(handle, 'supervisor-queue-bound');
-    const carried = continuedInput(history);
+    const carried = roomAgentSupervisorInputSchema.parse(continuedInput(history));
     expect(carried.pending).toHaveLength(100);
     expect(() => roomAgentSupervisorInputSchema.parse(carried)).not.toThrow();
     expect(carried.pending.map((i: any) => i.turn.agentRunId)).toEqual(Array.from({length:100}, (_, i) => `agent_run:${i+6}`));
@@ -411,6 +428,7 @@ it('ignores duplicate and invalid enqueue signals without losing a valid queued 
   });
 }, 30_000);
 
+/** Advance virtual time in bounded steps until an external activity milestone is observed. */
 async function advanceUntil(check: () => boolean) {
   // Bound each clock advance. Unlocking time indefinitely can jump an idle
   // supervisor to its server timeout after the final activity completes.

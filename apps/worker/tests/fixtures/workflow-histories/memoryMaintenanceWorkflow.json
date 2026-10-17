@@ -302,7 +302,7 @@
         "failure": {
           "message": "synthetic",
           "source": "TypeScriptSDK",
-          "stackTrace": "Error: synthetic\n    at refreshAllMonthsMemoryGraphSnapshot (/workspace/scratch/282790e070ac/spaceapp-bounty60/apps/worker/tests/temporal-sandbox.test.ts:131:67)",
+          "stackTrace": "",
           "applicationFailureInfo": {
             "type": "Error"
           }
@@ -424,7 +424,7 @@
         "failure": {
           "message": "synthetic",
           "source": "TypeScriptSDK",
-          "stackTrace": "Error: synthetic\n    at reconcileStaleSpaceAgentSessions (/workspace/scratch/282790e070ac/spaceapp-bounty60/apps/worker/tests/temporal-sandbox.test.ts:132:66)",
+          "stackTrace": "",
           "applicationFailureInfo": {
             "type": "Error"
           }
