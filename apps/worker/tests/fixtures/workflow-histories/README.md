@@ -16,8 +16,10 @@ npm test -w @space/worker
 
 **Do not re-record histories merely to make a failing replay pass.** After the
 initial fixture introduction, re-recording is allowed only together with a
-reviewed `patched()` workflow change. Preserve old branch histories so existing
-executions remain covered. Review the history diff and explain it in the PR.
+reviewed `patched()` workflow change. The recorder never overwrites an existing history. A distinct recording uses
+a SHA-256-suffixed filename and is added to `manifest.txt`; identical bytes are
+reused. Baseline and all earlier versions remain in the replay set. Preserve old
+branch histories so existing executions remain covered. Review the history diff and explain it in the PR.
 
 `history-variant-loader.cjs` creates a test-only historical bundle by replacing
 only the `room-background-continuation-v1` patch decision with `false`. All other
@@ -55,8 +57,10 @@ are synthetic; no provider, database, or operator instance is contacted.
 | Memory maintenance/consolidation | Exhausted refresh/reconciliation failures do not prevent the real consolidation child; mutation retries and finalization still complete. |
 | Memory mutation | Its own activity retries before returning success. |
 
-Normal runs do not write fixtures. The final test verifies the required workflow
-fixture filenames, replays every JSON file, and reports failures with the filename
+Normal runs do not write fixtures. The final test requires an exact match between the complete `manifest.txt` and
+the JSON files on disk: missing, renamed and unlisted fixtures fail the gate.
+Manifest changes must be reviewed alongside a permitted recording; never remove
+an old entry to hide a replay failure. It replays every listed file and reports failures with the filename
 and workflow identity. It also asserts the SDK's `DeterminismViolationError` for
 the intentionally incompatible test-only bundle. The recorder runs that same gate
 after recording, so newly introduced fixtures are replayed in the same command.

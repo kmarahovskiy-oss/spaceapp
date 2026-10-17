@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { Worker, bundleWorkflowCode, type WorkflowBundleWithSourceMap } from '@temporalio/worker';
@@ -9,7 +9,7 @@ import { DeterminismViolationError } from '@temporalio/workflow';
 import { Context } from '@temporalio/activity';
 import { roomAgentSupervisorInputSchema } from '@space/contracts';
 import { defaultPayloadConverter } from '@temporalio/common';
-import { serializeHistory } from './support/history-json.js';
+import { recordHistoryFixture, readHistoryFixtureNames } from './support/history-files.js';
 
 const workflowsPath = fileURLToPath(new URL('./support/sandbox-workflows.ts', import.meta.url));
 const loader = fileURLToPath(new URL('./support/history-variant-loader.cjs', import.meta.url));
@@ -66,8 +66,7 @@ async function firstHistory(handle: any) {
 async function capture(handle: any, name: string) {
   const history = await firstHistory(handle);
   if (record) {
-    await mkdir(fixtureDir, { recursive: true });
-    await writeFile(join(fixtureDir, `${name}.json`), serializeHistory(temporal.api.history.v1.History.create(history).toJSON()));
+    await recordHistoryFixture(fixtureDir, name, temporal.api.history.v1.History.create(history).toJSON());
   }
   return history;
 }
@@ -441,8 +440,7 @@ async function advanceUntil(check: () => boolean) {
 }
 
 it('replays every checked-in history using current production workflows and rejects an incompatible workflow', async () => {
-  const names = (await readdir(fixtureDir)).filter(n => n.endsWith('.json')).sort();
-  expect(names).toEqual(expect.arrayContaining(['dotGoalWorkflow-signal.json', 'dummyTurnWorkflow.json', 'codexAppServerTurnWorkflow.json', 'roomAgentSupervisorWorkflow-current.json', 'roomAgentSupervisorWorkflow-legacy.json', 'roomAgentActionWorkflow.json', 'memoryMaintenanceWorkflow.json', 'memoryConsolidationWorkflow.json', 'memoryMutationWorkflow.json']));
+  const names = await readHistoryFixtureNames(fixtureDir);
   const histories = [];
   for (const name of names) histories.push({ workflowId: name, history: temporal.api.history.v1.History.fromObject(JSON.parse(await readFile(join(fixtureDir, name), 'utf8'))) });
   const failures = [];
